@@ -188,17 +188,24 @@ _dotsecenv_parse_line() {
             if [[ "$value" == "{dotsecenv}" ]]; then
                 _DOTSECENV_PARSE_VALUE="$_DOTSECENV_PARSE_KEY"
                 _DOTSECENV_PARSE_TYPE="secret_same"
-            elif [[ "$value" == \{dotsecenv:*\} ]]; then
-                # Extract secret name
-                local secret_name="${value#\{dotsecenv:}"
+            elif [[ "$value" == \{dotsecenv/*\} ]]; then
+                # Extract secret name (everything between first / and closing })
+                local secret_name="${value#\{dotsecenv/}"
                 secret_name="${secret_name%\}}"
-                # Validate the secret name format
-                if [[ "$secret_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                # Validate: no additional slashes, valid secret name format
+                if [[ -z "$secret_name" ]]; then
+                    # Empty name like {dotsecenv/} - treat as plain value silently
+                    _DOTSECENV_PARSE_VALUE="$value"
+                    _DOTSECENV_PARSE_TYPE="plain"
+                elif [[ "$secret_name" == */* ]]; then
+                    echo "dotsecenv: error: invalid syntax '$value' - only one '/' allowed" >&2
+                    return 1
+                elif [[ "$secret_name" =~ ^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)?$ ]]; then
                     _DOTSECENV_PARSE_VALUE="$secret_name"
                     _DOTSECENV_PARSE_TYPE="secret_named"
                 else
-                    _DOTSECENV_PARSE_VALUE="$value"
-                    _DOTSECENV_PARSE_TYPE="plain"
+                    echo "dotsecenv: error: invalid secret name '$secret_name' in '$value'" >&2
+                    return 1
                 fi
             else
                 _DOTSECENV_PARSE_VALUE="$value"

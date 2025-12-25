@@ -234,14 +234,14 @@ EOF
 
 test_parse_secret_named() {
     local shell="$1"
-    log "[$shell] Testing {dotsecenv:name} secret (named)..."
+    log "[$shell] Testing {dotsecenv/name} secret (named)..."
     ((TESTS_RUN++)) || true
 
     local test_dir="$TEMP_DIR/test_secret_named"
     mkdir -p "$test_dir"
 
     cat > "$test_dir/.env" << 'EOF'
-MY_API_KEY={dotsecenv:API_KEY}
+MY_API_KEY={dotsecenv/API_KEY}
 EOF
     chmod 644 "$test_dir/.env"
 
@@ -256,9 +256,9 @@ EOF
     fi
 
     if [[ "$result" == "mock-api-key-12345" ]]; then
-        pass "[$shell] {dotsecenv:name} secret resolution works correctly"
+        pass "[$shell] {dotsecenv/name} secret resolution works correctly"
     else
-        fail "[$shell] {dotsecenv:name} secret resolution failed, got: $result"
+        fail "[$shell] {dotsecenv/name} secret resolution failed, got: $result"
     fi
 }
 
@@ -389,7 +389,7 @@ test_two_phase_loading() {
     # Mixed plain and secret values
     cat > "$test_dir/.env" << 'EOF'
 PLAIN_VAR=plain-value
-SECRET_VAR={dotsecenv:API_KEY}
+SECRET_VAR={dotsecenv/API_KEY}
 EOF
     chmod 644 "$test_dir/.env"
 

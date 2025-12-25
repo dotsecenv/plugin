@@ -179,9 +179,24 @@ function _dotsecenv_parse_line
         if test "$value" = "{dotsecenv}"
             set -g _DOTSECENV_PARSE_VALUE "$_DOTSECENV_PARSE_KEY"
             set -g _DOTSECENV_PARSE_TYPE "secret_same"
-        else if string match -qr '^\{dotsecenv:([A-Za-z_][A-Za-z0-9_]*)\}$' "$value"
-            set -g _DOTSECENV_PARSE_VALUE (string replace -r '^\{dotsecenv:([A-Za-z_][A-Za-z0-9_]*)\}$' '$1' "$value")
-            set -g _DOTSECENV_PARSE_TYPE "secret_named"
+        else if string match -qr '^\{dotsecenv/.*\}$' "$value"
+            # Extract secret name (everything between first / and closing })
+            set -l secret_name (string replace -r '^\{dotsecenv/(.*)\}$' '$1' "$value")
+            # Validate: no additional slashes, valid secret name format
+            if test -z "$secret_name"
+                # Empty name like {dotsecenv/} - treat as plain value silently
+                set -g _DOTSECENV_PARSE_VALUE "$value"
+                set -g _DOTSECENV_PARSE_TYPE "plain"
+            else if string match -q "*/*" "$secret_name"
+                echo "dotsecenv: error: invalid syntax '$value' - only one '/' allowed" >&2
+                return 1
+            else if string match -qr '^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)?$' "$secret_name"
+                set -g _DOTSECENV_PARSE_VALUE "$secret_name"
+                set -g _DOTSECENV_PARSE_TYPE "secret_named"
+            else
+                echo "dotsecenv: error: invalid secret name '$secret_name' in '$value'" >&2
+                return 1
+            end
         else
             set -g _DOTSECENV_PARSE_VALUE "$value"
             set -g _DOTSECENV_PARSE_TYPE "plain"

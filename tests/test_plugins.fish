@@ -159,13 +159,13 @@ function test_parse_secret_same_name
 end
 
 function test_parse_secret_named
-    log "[fish] Testing {dotsecenv:name} secret (named)..."
+    log "[fish] Testing {dotsecenv/name} secret (named)..."
     set TESTS_RUN (math $TESTS_RUN + 1)
 
     set test_dir "$TEMP_DIR/test_secret_named"
     mkdir -p "$test_dir"
 
-    echo 'MY_API_KEY={dotsecenv:API_KEY}' > "$test_dir/.env"
+    echo 'MY_API_KEY={dotsecenv/API_KEY}' > "$test_dir/.env"
     chmod 644 "$test_dir/.env"
 
     set mock_path (create_mock_dotsecenv)
@@ -181,9 +181,9 @@ function test_parse_secret_named
     " 2>&1)
 
     if test "$result" = "mock-api-key-12345"
-        pass "[fish] {dotsecenv:name} secret resolution works correctly"
+        pass "[fish] {dotsecenv/name} secret resolution works correctly"
     else
-        fail "[fish] {dotsecenv:name} secret resolution failed, got: $result"
+        fail "[fish] {dotsecenv/name} secret resolution failed, got: $result"
     end
 end
 
@@ -253,7 +253,7 @@ function test_two_phase_loading
     mkdir -p "$test_dir"
 
     echo 'PLAIN_VAR=plain-value
-SECRET_VAR={dotsecenv:API_KEY}' > "$test_dir/.env"
+SECRET_VAR={dotsecenv/API_KEY}' > "$test_dir/.env"
     chmod 644 "$test_dir/.env"
 
     set mock_path (create_mock_dotsecenv)
