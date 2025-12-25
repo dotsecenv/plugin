@@ -102,7 +102,7 @@ _dotsecenv_is_trusted() {
 _dotsecenv_trust_always() {
     local dir="$1"
     _dotsecenv_ensure_config_dir
-    echo "$dir" >> "$DOTSECENV_TRUSTED_DIRS_FILE"
+    echo "$dir" >>"$DOTSECENV_TRUSTED_DIRS_FILE"
 }
 
 # Add directory to session-only trusted list
@@ -137,18 +137,18 @@ _dotsecenv_prompt_trust() {
     response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
 
     case "$response" in
-        y|yes)
-            _dotsecenv_trust_session "$dir"
-            return 0
-            ;;
-        a|always)
-            _dotsecenv_trust_always "$dir"
-            return 0
-            ;;
-        n|no|*)
-            _dotsecenv_deny_session "$dir"
-            return 1
-            ;;
+    y | yes)
+        _dotsecenv_trust_session "$dir"
+        return 0
+        ;;
+    a | always)
+        _dotsecenv_trust_always "$dir"
+        return 0
+        ;;
+    n | no | *)
+        _dotsecenv_deny_session "$dir"
+        return 1
+        ;;
     esac
 }
 
@@ -275,7 +275,7 @@ _dotsecenv_load_file() {
                 fi
             fi
         fi
-    done < "$file"
+    done <"$file"
 }
 
 # Unload variables for a directory
