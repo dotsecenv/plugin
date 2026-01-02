@@ -294,6 +294,16 @@ _dotsecenv_unload_dir() {
     local dir_hash
     dir_hash=$(_dotsecenv_dir_hash "$dir")
     local vars_var="_DOTSECENV_LOADED_${dir_hash}"
+    local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
+
+    # Report secrets being unloaded before clearing them
+    if eval "[[ \${#${secrets_var}[@]} -gt 0 ]]" 2>/dev/null; then
+        local secrets_list secret_count
+        eval "secret_count=\${#${secrets_var}[@]}"
+        eval "secrets_list=\$(IFS=', '; echo \"\${${secrets_var}[*]}\")"
+        echo "dotsecenv: unloaded $secret_count secret(s): $secrets_list" >&2
+        unset "$secrets_var"
+    fi
 
     # Check if the tracking variable exists and unload vars
     # Use eval for zsh/bash compatibility
@@ -386,6 +396,13 @@ _dotsecenv_on_cd() {
         _DOTSECENV_SECRETS_LOADED=()
         _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
         if [[ ${#_DOTSECENV_SECRETS_LOADED[@]} -gt 0 ]]; then
+            # Track secrets per directory for unload reporting
+            local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
+            eval "${secrets_var}=()"
+            local secret_key
+            for secret_key in "${_DOTSECENV_SECRETS_LOADED[@]}"; do
+                _dotsecenv_array_append "$secrets_var" "$secret_key"
+            done
             local keys_list
             keys_list=$(IFS=', '; echo "${_DOTSECENV_SECRETS_LOADED[*]}")
             echo "dotsecenv: loaded ${#_DOTSECENV_SECRETS_LOADED[@]} secret(s) from .secenv: $keys_list" >&2
