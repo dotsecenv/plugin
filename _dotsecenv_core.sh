@@ -404,7 +404,10 @@ _dotsecenv_on_cd() {
                 _dotsecenv_array_append "$secrets_var" "$secret_key"
             done
             local keys_list
-            keys_list=$(IFS=', '; echo "${_DOTSECENV_SECRETS_LOADED[*]}")
+            keys_list=$(
+                IFS=', '
+                echo "${_DOTSECENV_SECRETS_LOADED[*]}"
+            )
             echo "dotsecenv: loaded ${#_DOTSECENV_SECRETS_LOADED[@]} secret(s) from .secenv: $keys_list" >&2
         fi
     fi
