@@ -22,6 +22,8 @@ set -g _DOTSECENV_PREV_PWD ""
 # Format: _DOTSECENV_LOADED_<hash> = "VAR1 VAR2 VAR3"
 # Track which vars were set by .env
 set -g _DOTSECENV_ENV_VARS
+# Track secrets loaded from .secenv (reset per directory change)
+set -g _DOTSECENV_SECRETS_LOADED
 
 # Ensure config directory exists
 function _dotsecenv_ensure_config_dir
@@ -248,6 +250,7 @@ function _dotsecenv_load_file
                 if test $secret_status -eq 0
                     set -gx $key "$secret_result"
                     set -g -a _DOTSECENV_LOADED_$dir_hash "$key"
+                    set -g -a _DOTSECENV_SECRETS_LOADED "$key"
                     # Show any warnings that were emitted
                     test -s "$secret_stderr_file"; and cat "$secret_stderr_file" >&2
                 else
@@ -347,7 +350,12 @@ function _dotsecenv_on_cd
 
     # Phase 2: Load secrets from .secenv (if trusted)
     if test $has_secenv -eq 1; and test $should_load_secenv -eq 1
+        set -g _DOTSECENV_SECRETS_LOADED
         _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
+        if test (count $_DOTSECENV_SECRETS_LOADED) -gt 0
+            set -l keys_list (string join ', ' $_DOTSECENV_SECRETS_LOADED)
+            echo "dotsecenv: loaded "(count $_DOTSECENV_SECRETS_LOADED)" secret(s) from .secenv: $keys_list" >&2
+        end
     end
 end
 
