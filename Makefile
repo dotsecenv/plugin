@@ -2,7 +2,8 @@
 help:
 	@echo "shell targets:"
 	@echo "  make test            - Run unit tests (bash/zsh/fish)"
-	@echo "  make test-bash-zsh   - Run bash/zsh unit tests"
+	@echo "  make test-bash       - Run bash unit tests"
+	@echo "  make test-zsh        - Run zsh unit tests"
 	@echo "  make test-fish       - Run fish unit tests"
 	@echo "  make test-managers   - Run plugin manager integration tests (Docker)"
 	@echo "  make test-all        - Run all tests including integration"
@@ -11,13 +12,18 @@ help:
 	@echo "  make lint            - Lint shell plugin scripts"
 
 .PHONY: test
-test: test-bash-zsh test-fish
+test: test-bash test-zsh test-fish
 	@echo "All tests passed!"
 
-.PHONY: test-bash-zsh
-test-bash-zsh:
-	@echo "Running shell plugin tests..."
-	@./tests/test_plugins.sh
+.PHONY: test-bash
+test-bash:
+	@echo "Running bash plugin tests..."
+	@./tests/test_plugins.sh --bash-only
+
+.PHONY: test-zsh
+test-zsh:
+	@echo "Running zsh plugin tests..."
+	@./tests/test_plugins.sh --zsh-only
 
 .PHONY: test-fish
 test-fish:

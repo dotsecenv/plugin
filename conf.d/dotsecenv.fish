@@ -380,8 +380,13 @@ function _dotsecenv_cd_hook --on-variable PWD
     # Update previous directory tracker
     set -g _DOTSECENV_PREV_PWD "$PWD"
 
-    # Process the directory change (allows cd . to reload .secenv files)
+    # Process the directory change
     _dotsecenv_on_cd "$old_dir" "$new_dir"
+end
+
+# Reload secrets in current directory
+function dotsecenv_reload
+    _dotsecenv_on_cd "$PWD" "$PWD"
 end
 
 # Clipboard helper - copies stdin to clipboard
