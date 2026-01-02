@@ -292,6 +292,7 @@ end
 function _dotsecenv_on_cd
     set -l old_dir $argv[1]
     set -l new_dir $argv[2]
+    set -l dir_hash (_dotsecenv_dir_hash "$new_dir")
 
     # Unload variables from old directory
     if test -n "$old_dir"
