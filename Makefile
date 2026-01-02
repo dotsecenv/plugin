@@ -10,9 +10,11 @@ help:
 	@echo "  make fmt             - Format all shell scripts"
 	@echo "  make fmt-check       - Check formatting without modifying files"
 	@echo "  make lint            - Lint shell plugin scripts"
+	@echo "  make hooks           - Install git hooks using lefthook"
+	@echo "  make install-tools   - Install all dev tools"
 
 .PHONY: test
-test: test-bash test-zsh test-fish
+test: test-bash test-zsh test-fish test-managers
 	@echo "All tests passed!"
 
 .PHONY: test-bash
@@ -58,10 +60,6 @@ test-manager-fisher:
 .PHONY: test-manager-ohmyfish
 test-manager-ohmyfish:
 	@./tests/test_plugin_managers.sh --manager=ohmyfish
-
-.PHONY: test-all
-test-all: test test-managers
-	@echo "All tests (unit + integration) passed!"
 
 .PHONY: lint
 lint:
@@ -128,3 +126,24 @@ fmt-check:
 		fish_indent "$$f" | diff -q "$$f" - > /dev/null 2>&1 || { echo "$$f is not formatted correctly"; exit 1; }; \
 	done
 	@echo "All files formatted correctly!"
+
+.PHONY: hooks
+hooks: install-lefthook
+	@echo "Installing git hooks..."
+	@$(LEFTHOOK) install
+
+# =============================================================================
+# Development Tool Installation
+# =============================================================================
+
+.PHONY: install-tools
+install-tools: install-lefthook
+
+LEFTHOOK := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)/lefthook
+
+.PHONY: install-lefthook
+install-lefthook:
+	@if ! [ -x "$(LEFTHOOK)" ]; then \
+		echo "Installing lefthook..."; \
+		go install github.com/evilmartians/lefthook/v2@v2.0.13; \
+	fi
