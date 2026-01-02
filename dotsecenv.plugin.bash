@@ -35,20 +35,29 @@ _dotsecenv_chdir_hook() {
 
 # Wrap cd to trigger directory change processing
 cd() {
-    builtin cd "$@" || return $?
-    _dotsecenv_chdir_hook
+    local __dotsecenv_ret
+    builtin cd "$@"
+    __dotsecenv_ret=$?
+    ((__dotsecenv_ret == 0)) && _dotsecenv_chdir_hook
+    return $__dotsecenv_ret
 }
 
 # Wrap pushd to trigger directory change processing
 pushd() {
-    builtin pushd "$@" || return $?
-    _dotsecenv_chdir_hook
+    local __dotsecenv_ret
+    builtin pushd "$@"
+    __dotsecenv_ret=$?
+    ((__dotsecenv_ret == 0)) && _dotsecenv_chdir_hook
+    return $__dotsecenv_ret
 }
 
 # Wrap popd to trigger directory change processing
 popd() {
-    builtin popd "$@" || return $?
-    _dotsecenv_chdir_hook
+    local __dotsecenv_ret
+    builtin popd "$@"
+    __dotsecenv_ret=$?
+    ((__dotsecenv_ret == 0)) && _dotsecenv_chdir_hook
+    return $__dotsecenv_ret
 }
 
 # Process current directory on plugin load (initial shell startup)
