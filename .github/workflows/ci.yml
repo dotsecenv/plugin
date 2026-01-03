@@ -49,15 +49,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-14]
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Docker via Colima
-        if: runner.os == 'macOS'
-        run: |
-          brew install docker colima
-          colima start || (cat /Users/runner/.colima/_lima/colima/ha.stderr.log && exit 1)
 
       - name: Install fish (Ubuntu)
         if: runner.os == 'Linux'
@@ -65,6 +59,12 @@ jobs:
           sudo apt-add-repository ppa:fish-shell/release-3 -y
           sudo apt-get update
           sudo apt-get install -y fish
+
+      - name: Install Docker via Colima (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install docker colima
+          colima start || (cat /Users/runner/.colima/_lima/colima/ha.stderr.log && exit 1)
 
       - name: Install fish (macOS)
         if: runner.os == 'macOS'
