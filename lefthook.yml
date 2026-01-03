@@ -5,4 +5,4 @@ pre-push:
   follow: true
   commands:
     lint-test:
-      run: make fmt-check lint test
+      run: make fmt-check lint test-plugins test-managers

@@ -60,10 +60,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fish
 
-      - name: Setup Docker (macOS)
-        if: runner.os == 'macOS'
-        uses: docker/setup-docker-action@v4
-
       - name: Install fish (macOS)
         if: runner.os == 'macOS'
         run: brew install fish
@@ -72,5 +68,15 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install bash
 
-      - name: Run tests
+      - name: Format check
+        run: make fmt-check
+
+      - name: Lint
+        run: make lint
+
+      - name: Test plugins
         run: make test
+
+      - name: Test plugin managers (Linux)
+        if: runner.os == 'Linux'
+        run: make test-managers

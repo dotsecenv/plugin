@@ -1,7 +1,7 @@
 .PHONY: help
 help:
 	@echo "shell targets:"
-	@echo "  make test            - Run unit tests (bash/zsh/fish)"
+	@echo "  make test-plugins    - Run unit tests (bash/zsh/fish)"
 	@echo "  make test-bash       - Run bash unit tests"
 	@echo "  make test-zsh        - Run zsh unit tests"
 	@echo "  make test-fish       - Run fish unit tests"
@@ -13,8 +13,8 @@ help:
 	@echo "  make hooks           - Install git hooks using lefthook"
 	@echo "  make install-tools   - Install all dev tools"
 
-.PHONY: test
-test: test-bash test-zsh test-fish test-managers
+.PHONY: test-plugins
+test-plugins: test-bash test-zsh test-fish
 	@echo "All tests passed!"
 
 .PHONY: test-bash
