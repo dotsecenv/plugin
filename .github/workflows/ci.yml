@@ -57,7 +57,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install docker colima
-          colima start
+          colima start || (cat /Users/runner/.colima/_lima/colima/ha.stderr.log && exit 1)
 
       - name: Install fish (Ubuntu)
         if: runner.os == 'Linux'
