@@ -6,7 +6,6 @@ help:
 	@echo "  make test-zsh        - Run zsh unit tests"
 	@echo "  make test-fish       - Run fish unit tests"
 	@echo "  make test-managers   - Run plugin manager integration tests (Docker)"
-	@echo "  make test-all        - Run all tests including integration"
 	@echo "  make fmt             - Format all shell scripts"
 	@echo "  make fmt-check       - Check formatting without modifying files"
 	@echo "  make lint            - Lint shell plugin scripts"
@@ -81,33 +80,7 @@ SHELL_FILES := ./_dotsecenv_core.sh ./dotsecenv.plugin.bash ./dotsecenv.plugin.z
 FISH_FILES := ./conf.d/dotsecenv.fish ./tests/test_plugins.fish
 
 .PHONY: fmt-install
-fmt-install:
-	@echo "Installing formatters..."
-	@if ! command -v shfmt >/dev/null 2>&1; then \
-		echo "Installing shfmt..."; \
-		if command -v brew >/dev/null 2>&1; then \
-			brew install shfmt; \
-		elif command -v go >/dev/null 2>&1; then \
-			go install mvdan.cc/sh/v3/cmd/shfmt@latest; \
-		else \
-			curl -sS https://webi.sh/shfmt | sh; \
-		fi; \
-	else \
-		echo "shfmt already installed"; \
-	fi
-	@if ! command -v fish >/dev/null 2>&1; then \
-		echo "Installing fish (for fish_indent)..."; \
-		if command -v brew >/dev/null 2>&1; then \
-			brew install fish; \
-		elif command -v apt-get >/dev/null 2>&1; then \
-			sudo apt-get update && sudo apt-get install -y fish; \
-		else \
-			echo "Please install fish manually: https://fishshell.com"; \
-			exit 1; \
-		fi; \
-	else \
-		echo "fish already installed"; \
-	fi
+fmt-install: install-shfmt
 
 .PHONY: fmt
 fmt: fmt-install
@@ -137,13 +110,24 @@ hooks: install-lefthook
 # =============================================================================
 
 .PHONY: install-tools
-install-tools: install-lefthook
+install-tools: install-lefthook install-shfmt
 
-LEFTHOOK := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)/lefthook
+GOBIN := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)
+
+LEFTHOOK := $(GOBIN)/lefthook
 
 .PHONY: install-lefthook
 install-lefthook:
 	@if ! [ -x "$(LEFTHOOK)" ]; then \
 		echo "Installing lefthook..."; \
 		go install github.com/evilmartians/lefthook/v2@v2.0.13; \
+	fi
+
+SHFMT := $(GOBIN)/shfmt
+
+.PHONY: install-shfmt
+install-shfmt:
+	@if ! [ -x "$(SHFMT)" ]; then \
+		echo "Installing shfmt..."; \
+		go install mvdan.cc/sh/v3/cmd/shfmt@latest; \
 	fi
