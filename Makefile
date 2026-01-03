@@ -79,11 +79,8 @@ SHELL_FILES := ./_dotsecenv_core.sh ./dotsecenv.plugin.bash ./dotsecenv.plugin.z
                ./tests/test_plugins.sh ./tests/test_plugin_managers.sh ./install.sh
 FISH_FILES := ./conf.d/dotsecenv.fish ./tests/test_plugins.fish
 
-.PHONY: fmt-install
-fmt-install: install-shfmt
-
 .PHONY: fmt
-fmt: fmt-install
+fmt: install-shfmt
 	@echo "Formatting shell scripts..."
 	shfmt -w -i 4 $(SHELL_FILES)
 	@echo "Formatting fish scripts..."
@@ -91,7 +88,7 @@ fmt: fmt-install
 	@echo "Done!"
 
 .PHONY: fmt-check
-fmt-check:
+fmt-check: install-shfmt
 	@echo "Checking shell script formatting..."
 	@shfmt -d -i 4 $(SHELL_FILES)
 	@echo "Checking fish script formatting..."
