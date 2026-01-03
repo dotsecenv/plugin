@@ -60,11 +60,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fish
 
-      - name: Install Docker via Colima (macOS)
+      - name: Setup Docker (macOS)
         if: runner.os == 'macOS'
-        run: |
-          brew install docker colima
-          colima start || (cat /Users/runner/.colima/_lima/colima/ha.stderr.log && exit 1)
+        uses: docker/setup-docker-action@v4
 
       - name: Install fish (macOS)
         if: runner.os == 'macOS'
