@@ -386,7 +386,7 @@ function _dotsecenv_cd_hook --on-variable PWD
 end
 
 # Reload secrets in current directory
-function dotsecenv_reload
+function reloadsecenv
     _dotsecenv_on_cd "$PWD" "$PWD"
 end
 
