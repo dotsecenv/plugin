@@ -66,6 +66,7 @@ TESTS_FAILED=0
 TEST_BASH=1
 TEST_ZSH=1
 TEST_FISH=1
+TREE_ONLY=0
 VERBOSE=0
 
 # Parse arguments
@@ -83,6 +84,7 @@ for arg in "$@"; do
         TEST_BASH=0
         TEST_ZSH=0
         ;;
+    --tree-only) TREE_ONLY=1 ;;
     --verbose) VERBOSE=1 ;;
     esac
 done
@@ -896,17 +898,19 @@ main() {
         log "Bash version: $("$BASH_BIN" --version | head -1)"
         echo ""
 
-        test_parse_plain_env "bash"
-        test_parse_secret_same_name "bash"
-        test_parse_secret_named "bash"
-        test_missing_secret_warning "bash"
-        test_security_check_world_writable "bash"
-        test_secenv_override_warning "bash"
-        test_two_phase_loading "bash"
-        test_alias_dse "bash"
-        test_alias_secret "bash"
-        test_comments_and_empty_lines "bash"
-        test_quoted_values "bash"
+        if [[ $TREE_ONLY -eq 0 ]]; then
+            test_parse_plain_env "bash"
+            test_parse_secret_same_name "bash"
+            test_parse_secret_named "bash"
+            test_missing_secret_warning "bash"
+            test_security_check_world_writable "bash"
+            test_secenv_override_warning "bash"
+            test_two_phase_loading "bash"
+            test_alias_dse "bash"
+            test_alias_secret "bash"
+            test_comments_and_empty_lines "bash"
+            test_quoted_values "bash"
+        fi
         test_tree_scope_persist_in_subdir "bash"
         test_tree_scope_unload_on_leave "bash"
         test_tree_scope_nested_secenv "bash"
@@ -921,17 +925,19 @@ main() {
             log "Running Zsh tests..."
             echo ""
 
-            test_parse_plain_env "zsh"
-            test_parse_secret_same_name "zsh"
-            test_parse_secret_named "zsh"
-            test_missing_secret_warning "zsh"
-            test_security_check_world_writable "zsh"
-            test_secenv_override_warning "zsh"
-            test_two_phase_loading "zsh"
-            test_alias_dse "zsh"
-            test_alias_secret "zsh"
-            test_comments_and_empty_lines "zsh"
-            test_quoted_values "zsh"
+            if [[ $TREE_ONLY -eq 0 ]]; then
+                test_parse_plain_env "zsh"
+                test_parse_secret_same_name "zsh"
+                test_parse_secret_named "zsh"
+                test_missing_secret_warning "zsh"
+                test_security_check_world_writable "zsh"
+                test_secenv_override_warning "zsh"
+                test_two_phase_loading "zsh"
+                test_alias_dse "zsh"
+                test_alias_secret "zsh"
+                test_comments_and_empty_lines "zsh"
+                test_quoted_values "zsh"
+            fi
             test_tree_scope_persist_in_subdir "zsh"
             test_tree_scope_unload_on_leave "zsh"
             test_tree_scope_nested_secenv "zsh"
