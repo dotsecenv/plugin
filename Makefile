@@ -20,17 +20,17 @@ test-plugins: test-bash test-zsh test-fish
 .PHONY: test-bash
 test-bash:
 	@echo "Running bash plugin tests..."
-	@./tests/test_plugins.sh --bash-only --tree-only
+	@./tests/test_plugins.sh --bash-only
 
 .PHONY: test-zsh
 test-zsh:
 	@echo "Running zsh plugin tests..."
-	@./tests/test_plugins.sh --zsh-only --tree-only
+	@./tests/test_plugins.sh --zsh-only
 
 .PHONY: test-fish
 test-fish:
 	@echo "Running fish shell plugin tests..."
-	@./tests/test_plugins.sh --fish-only --tree-only
+	@./tests/test_plugins.sh --fish-only
 
 .PHONY: test-all
 test-all:
