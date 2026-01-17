@@ -65,13 +65,24 @@ TESTS_FAILED=0
 # Options
 TEST_BASH=1
 TEST_ZSH=1
+TEST_FISH=1
 VERBOSE=0
 
 # Parse arguments
 for arg in "$@"; do
     case "$arg" in
-    --bash-only) TEST_ZSH=0 ;;
-    --zsh-only) TEST_BASH=0 ;;
+    --bash-only)
+        TEST_ZSH=0
+        TEST_FISH=0
+        ;;
+    --zsh-only)
+        TEST_BASH=0
+        TEST_FISH=0
+        ;;
+    --fish-only)
+        TEST_BASH=0
+        TEST_ZSH=0
+        ;;
     --verbose) VERBOSE=1 ;;
     esac
 done
@@ -544,6 +555,322 @@ EOF
 }
 
 # ============================================================================
+# Tree-Scoped Loading Tests
+# ============================================================================
+
+test_tree_scope_persist_in_subdir() {
+    local shell="$1"
+    log "[$shell] Testing secrets persist when entering subdirectory..."
+    ((TESTS_RUN++)) || true
+
+    local test_dir="$TEMP_DIR/test_tree_persist"
+    mkdir -p "$test_dir/parent/child"
+
+    # Parent has .secenv
+    cat >"$test_dir/parent/.secenv" <<'EOF'
+DB_PASSWORD={dotsecenv}
+EOF
+    chmod 644 "$test_dir/parent/.secenv"
+
+    # Pre-trust the directory
+    local config_dir="$TEMP_DIR/config"
+    mkdir -p "$config_dir"
+    echo "$test_dir/parent" >"$config_dir/trusted_dirs"
+
+    local mock_path
+    mock_path=$(create_mock_dotsecenv)
+
+    local result
+    if [[ "$shell" == "bash" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" "$BASH_BIN" -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/_dotsecenv_core.sh'
+            source '$SHELL_DIR/dotsecenv.plugin.bash'
+            cd '$test_dir/parent'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/parent/child'
+            _dotsecenv_chpwd_hook
+            echo \"\$DB_PASSWORD\"
+        " 2>&1)
+    elif [[ "$shell" == "fish" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
+            set -x PATH '$mock_path' \$PATH
+            source '$SHELL_DIR/conf.d/dotsecenv.fish'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child'
+            echo \$DB_PASSWORD
+        " 2>&1)
+    else
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/dotsecenv.plugin.zsh'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child'
+            echo \"\$DB_PASSWORD\"
+        " 2>&1)
+    fi
+
+    if [[ "$result" == *"super-secret-password"* ]]; then
+        pass "[$shell] Secrets persist in subdirectory"
+    else
+        fail "[$shell] Secrets did not persist in subdirectory, got: $result"
+    fi
+}
+
+test_tree_scope_unload_on_leave() {
+    local shell="$1"
+    log "[$shell] Testing secrets unload when leaving tree..."
+    ((TESTS_RUN++)) || true
+
+    local test_dir="$TEMP_DIR/test_tree_unload"
+    mkdir -p "$test_dir/project"
+    mkdir -p "$test_dir/other"
+
+    # Project has .secenv
+    cat >"$test_dir/project/.secenv" <<'EOF'
+DB_PASSWORD={dotsecenv}
+EOF
+    chmod 644 "$test_dir/project/.secenv"
+
+    # Pre-trust the directory
+    local config_dir="$TEMP_DIR/config"
+    mkdir -p "$config_dir"
+    echo "$test_dir/project" >"$config_dir/trusted_dirs"
+
+    local mock_path
+    mock_path=$(create_mock_dotsecenv)
+
+    local result
+    if [[ "$shell" == "bash" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" "$BASH_BIN" -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/_dotsecenv_core.sh'
+            source '$SHELL_DIR/dotsecenv.plugin.bash'
+            cd '$test_dir/project'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/other'
+            _dotsecenv_chpwd_hook
+            echo \"VAR=\${DB_PASSWORD:-unset}\"
+        " 2>&1)
+    elif [[ "$shell" == "fish" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
+            set -x PATH '$mock_path' \$PATH
+            source '$SHELL_DIR/conf.d/dotsecenv.fish'
+            cd '$test_dir/project'
+            cd '$test_dir/other'
+            echo 'VAR='(test -n \"\$DB_PASSWORD\"; and echo \$DB_PASSWORD; or echo 'unset')
+        " 2>&1)
+    else
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/dotsecenv.plugin.zsh'
+            cd '$test_dir/project'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/other'
+            _dotsecenv_chpwd_hook
+            echo \"VAR=\${DB_PASSWORD:-unset}\"
+        " 2>&1)
+    fi
+
+    if [[ "$result" == *"VAR=unset"* ]]; then
+        pass "[$shell] Secrets unloaded when leaving tree"
+    else
+        fail "[$shell] Secrets not unloaded when leaving tree, got: $result"
+    fi
+}
+
+test_tree_scope_nested_secenv() {
+    local shell="$1"
+    log "[$shell] Testing nested .secenv layers on top of parent..."
+    ((TESTS_RUN++)) || true
+
+    local test_dir="$TEMP_DIR/test_tree_nested"
+    mkdir -p "$test_dir/parent/child"
+
+    # Parent has DB_PASSWORD
+    cat >"$test_dir/parent/.secenv" <<'EOF'
+DB_PASSWORD={dotsecenv}
+EOF
+    chmod 644 "$test_dir/parent/.secenv"
+
+    # Child has API_KEY
+    cat >"$test_dir/parent/child/.secenv" <<'EOF'
+API_KEY={dotsecenv}
+EOF
+    chmod 644 "$test_dir/parent/child/.secenv"
+
+    # Pre-trust both directories
+    local config_dir="$TEMP_DIR/config"
+    mkdir -p "$config_dir"
+    echo "$test_dir/parent" >"$config_dir/trusted_dirs"
+    echo "$test_dir/parent/child" >>"$config_dir/trusted_dirs"
+
+    local mock_path
+    mock_path=$(create_mock_dotsecenv)
+
+    local result
+    if [[ "$shell" == "bash" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" "$BASH_BIN" -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/_dotsecenv_core.sh'
+            source '$SHELL_DIR/dotsecenv.plugin.bash'
+            cd '$test_dir/parent'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/parent/child'
+            _dotsecenv_chpwd_hook
+            echo \"\$DB_PASSWORD|\$API_KEY\"
+        " 2>&1)
+    elif [[ "$shell" == "fish" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
+            set -x PATH '$mock_path' \$PATH
+            source '$SHELL_DIR/conf.d/dotsecenv.fish'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child'
+            echo \$DB_PASSWORD'|'\$API_KEY
+        " 2>&1)
+    else
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/dotsecenv.plugin.zsh'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child'
+            echo \"\$DB_PASSWORD|\$API_KEY\"
+        " 2>&1)
+    fi
+
+    if [[ "$result" == *"super-secret-password|mock-api-key-12345"* ]]; then
+        pass "[$shell] Nested .secenv layers correctly"
+    else
+        fail "[$shell] Nested .secenv layering failed, got: $result"
+    fi
+}
+
+test_tree_scope_sibling_navigation() {
+    local shell="$1"
+    log "[$shell] Testing sibling navigation keeps ancestor secrets..."
+    ((TESTS_RUN++)) || true
+
+    local test_dir="$TEMP_DIR/test_tree_sibling"
+    mkdir -p "$test_dir/parent/child1"
+    mkdir -p "$test_dir/parent/child2"
+
+    # Parent has .secenv
+    cat >"$test_dir/parent/.secenv" <<'EOF'
+DB_PASSWORD={dotsecenv}
+EOF
+    chmod 644 "$test_dir/parent/.secenv"
+
+    # Pre-trust the directory
+    local config_dir="$TEMP_DIR/config"
+    mkdir -p "$config_dir"
+    echo "$test_dir/parent" >"$config_dir/trusted_dirs"
+
+    local mock_path
+    mock_path=$(create_mock_dotsecenv)
+
+    local result
+    if [[ "$shell" == "bash" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" "$BASH_BIN" -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/_dotsecenv_core.sh'
+            source '$SHELL_DIR/dotsecenv.plugin.bash'
+            cd '$test_dir/parent'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/parent/child1'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/parent/child2'
+            _dotsecenv_chpwd_hook
+            echo \"\$DB_PASSWORD\"
+        " 2>&1)
+    elif [[ "$shell" == "fish" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
+            set -x PATH '$mock_path' \$PATH
+            source '$SHELL_DIR/conf.d/dotsecenv.fish'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child1'
+            cd '$test_dir/parent/child2'
+            echo \$DB_PASSWORD
+        " 2>&1)
+    else
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/dotsecenv.plugin.zsh'
+            cd '$test_dir/parent'
+            cd '$test_dir/parent/child1'
+            cd '$test_dir/parent/child2'
+            echo \"\$DB_PASSWORD\"
+        " 2>&1)
+    fi
+
+    if [[ "$result" == *"super-secret-password"* ]]; then
+        pass "[$shell] Sibling navigation keeps ancestor secrets"
+    else
+        fail "[$shell] Sibling navigation lost ancestor secrets, got: $result"
+    fi
+}
+
+test_tree_scope_reload_on_return() {
+    local shell="$1"
+    log "[$shell] Testing secrets reload when returning to source dir..."
+    ((TESTS_RUN++)) || true
+
+    local test_dir="$TEMP_DIR/test_tree_reload"
+    mkdir -p "$test_dir/project/src"
+
+    # Project has .secenv
+    cat >"$test_dir/project/.secenv" <<'EOF'
+DB_PASSWORD={dotsecenv}
+EOF
+    chmod 644 "$test_dir/project/.secenv"
+
+    # Pre-trust the directory
+    local config_dir="$TEMP_DIR/config"
+    mkdir -p "$config_dir"
+    echo "$test_dir/project" >"$config_dir/trusted_dirs"
+
+    local mock_path
+    mock_path=$(create_mock_dotsecenv)
+
+    local result
+    if [[ "$shell" == "bash" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" "$BASH_BIN" -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/_dotsecenv_core.sh'
+            source '$SHELL_DIR/dotsecenv.plugin.bash'
+            cd '$test_dir/project'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/project/src'
+            _dotsecenv_chpwd_hook
+            cd '$test_dir/project'
+            _dotsecenv_chpwd_hook 2>&1
+        " 2>&1)
+    elif [[ "$shell" == "fish" ]]; then
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
+            set -x PATH '$mock_path' \$PATH
+            source '$SHELL_DIR/conf.d/dotsecenv.fish'
+            cd '$test_dir/project'
+            cd '$test_dir/project/src'
+            cd '$test_dir/project'
+        " 2>&1)
+    else
+        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
+            export PATH='$mock_path:$PATH'
+            source '$SHELL_DIR/dotsecenv.plugin.zsh'
+            cd '$test_dir/project'
+            cd '$test_dir/project/src'
+            cd '$test_dir/project' 2>&1
+        " 2>&1)
+    fi
+
+    # Should see "loaded" message when returning (reloading)
+    if [[ "$result" == *"loaded"*"secret"* ]]; then
+        pass "[$shell] Secrets reload when returning to source dir"
+    else
+        fail "[$shell] Secrets did not reload on return, got: $result"
+    fi
+}
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -580,6 +907,11 @@ main() {
         test_alias_secret "bash"
         test_comments_and_empty_lines "bash"
         test_quoted_values "bash"
+        test_tree_scope_persist_in_subdir "bash"
+        test_tree_scope_unload_on_leave "bash"
+        test_tree_scope_nested_secenv "bash"
+        test_tree_scope_sibling_navigation "bash"
+        test_tree_scope_reload_on_return "bash"
     fi
 
     # Run zsh tests
@@ -600,8 +932,30 @@ main() {
             test_alias_secret "zsh"
             test_comments_and_empty_lines "zsh"
             test_quoted_values "zsh"
+            test_tree_scope_persist_in_subdir "zsh"
+            test_tree_scope_unload_on_leave "zsh"
+            test_tree_scope_nested_secenv "zsh"
+            test_tree_scope_sibling_navigation "zsh"
+            test_tree_scope_reload_on_return "zsh"
         else
             warn "Zsh not found, skipping zsh tests"
+        fi
+    fi
+
+    # Run fish tests (tree-scoped only for now)
+    if [[ $TEST_FISH -eq 1 ]]; then
+        if command -v fish &>/dev/null; then
+            echo ""
+            log "Running Fish tests..."
+            echo ""
+
+            test_tree_scope_persist_in_subdir "fish"
+            test_tree_scope_unload_on_leave "fish"
+            test_tree_scope_nested_secenv "fish"
+            test_tree_scope_sibling_navigation "fish"
+            test_tree_scope_reload_on_return "fish"
+        else
+            warn "Fish not found, skipping fish tests"
         fi
     fi
 
