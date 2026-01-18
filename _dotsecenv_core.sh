@@ -65,7 +65,8 @@ _dotsecenv_security_check() {
     fi
 
     # Get file stats - detect stat variant
-    local file_owner file_perms
+    # Note: Must initialize to avoid zsh printing existing values
+    local file_owner="" file_perms=""
     if stat --version &>/dev/null; then
         # GNU stat (Linux)
         file_owner=$(stat -c '%u' "$file")
@@ -317,7 +318,7 @@ _dotsecenv_unload_dir() {
 
     # Report secrets being unloaded before clearing them
     if eval "[[ \${#${secrets_var}[@]} -gt 0 ]]" 2>/dev/null; then
-        local secrets_list secret_count
+        local secrets_list="" secret_count=0
         eval "secret_count=\${#${secrets_var}[@]}"
         eval "secrets_list=\$(IFS=', '; echo \"\${${secrets_var}[*]}\")"
         echo "dotsecenv: unloaded $secret_count secret(s): $secrets_list" >&2
@@ -397,12 +398,13 @@ _dotsecenv_on_cd() {
     # PHASE 1: POP - Unload directories we've left
     # Walk stack from top (deepest) to bottom, pop entries we're no longer under
     # =========================================================================
-    local i stack_dir
+    # Note: Must initialize to avoid zsh printing existing values
+    local i=0 stack_dir=""
     local stack_len=${#_DOTSECENV_SOURCE_STACK[@]}
 
     # Iterate from the end of the stack (deepest directory) backwards
     # Note: zsh arrays are 1-indexed, bash arrays are 0-indexed
-    local start_idx end_idx
+    local start_idx=0 end_idx=0
     if [[ -n "$ZSH_VERSION" ]]; then
         start_idx=$stack_len
         end_idx=1
@@ -424,7 +426,8 @@ _dotsecenv_on_cd() {
             local unloaded_key
             for unloaded_key in "${_DOTSECENV_UNLOADED_KEYS[@]}"; do
                 # Check remaining stack entries (ancestors) for this key
-                local j ancestor_dir
+                # Note: Must initialize to avoid zsh printing existing values
+                local j=0 ancestor_dir=""
                 local inner_end_idx=$((end_idx))
                 for ((j = i - 1; j >= inner_end_idx; j--)); do
                     ancestor_dir="${_DOTSECENV_SOURCE_STACK[$j]}"
