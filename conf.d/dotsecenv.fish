@@ -1,5 +1,5 @@
 # dotsecenv shell plugin for fish
-# Automatically loads .env and .secenv files when entering directories
+# Automatically loads .secenv files when entering directories
 #
 # Installation:
 #   fisher install dotsecenv/plugin
@@ -28,8 +28,6 @@ set -g _DOTSECENV_PREV_PWD ""
 
 # Track loaded variables per directory
 # Format: _DOTSECENV_LOADED_<hash> = "VAR1 VAR2 VAR3"
-# Track which vars were set by .env
-set -g _DOTSECENV_ENV_VARS
 # Track secrets loaded from .secenv (reset per directory change)
 set -g _DOTSECENV_SECRETS_LOADED
 # Stack of directories with loaded .secenv (ordered ancestor → descendant)
@@ -185,7 +183,7 @@ function _dotsecenv_prompt_trust
     end
 end
 
-# Parse a line from .env or .secenv file
+# Parse a line from .secenv file
 # Sets: _DOTSECENV_PARSE_KEY, _DOTSECENV_PARSE_VALUE, _DOTSECENV_PARSE_TYPE
 function _dotsecenv_parse_line
     set -l line $argv[1]
@@ -245,7 +243,7 @@ function _dotsecenv_parse_line
     return 1
 end
 
-# Load a single .env or .secenv file
+# Load a single .secenv file
 function _dotsecenv_load_file
     set -l file $argv[1]
     set -l phase $argv[2]
@@ -266,18 +264,12 @@ function _dotsecenv_load_file
                 # Phase 1: load plain variables
                 set -gx $key "$value"
                 set -g -a _DOTSECENV_LOADED_$dir_hash "$key"
-                set -g -a _DOTSECENV_ENV_VARS "$key"
 
             else if test "$phase" = 2; and begin
                     test "$ptype" = secret_same; or test "$ptype" = secret_named
                 end
                 # Phase 2: load secrets via dotsecenv CLI
                 set -l secret_name "$value"
-
-                # Check if this will override a .env variable
-                if contains "$key" $_DOTSECENV_ENV_VARS
-                    echo "dotsecenv: warning: $key from .secenv overrides value from .env" >&2
-                end
 
                 # Fetch secret from vault (capture stderr separately to preserve secret value)
                 set -l secret_stderr_file (mktemp)
@@ -437,81 +429,66 @@ function _dotsecenv_on_cd
     end
 
     # =========================================================================
-    # PHASE 3: Check if we're in a subtree with no new .env/.secenv to load
+    # PHASE 3: Check if we're in a subtree with no new .secenv to load
     # =========================================================================
-    set -l has_env 0
     set -l has_secenv 0
-    test -f "$new_dir/.env"; and set has_env 1
     test -f "$new_dir/.secenv"; and set has_secenv 1
 
     set stack_len (count $_DOTSECENV_SOURCE_STACK)
-    if test $stack_len -gt 0; and test $has_env -eq 0; and test $has_secenv -eq 0
-        # We're in a subtree of an existing source directory with no new files
+    if test $stack_len -gt 0; and test $has_secenv -eq 0
+        # We're in a subtree of an existing source directory with no new .secenv
         # Secrets persist - nothing to do
         return 0
     end
 
     # =========================================================================
-    # PHASE 4: PUSH - Load .env and/or .secenv if present
+    # PHASE 4: PUSH - Load .secenv if present
     # =========================================================================
-    if test $has_env -eq 0; and test $has_secenv -eq 0
+    if test $has_secenv -eq 0
         return 0
     end
-
-    # Clear env var tracking for fresh load
-    set -g _DOTSECENV_ENV_VARS
 
     # Initialize tracking for this directory
     set -l dir_hash (_dotsecenv_dir_hash "$new_dir")
 
-    # Load .env file (plain vars and secrets)
-    if test $has_env -eq 1
-        if _dotsecenv_security_check "$new_dir/.env"
-            # Phase 1: Load plain variables from .env
-            _dotsecenv_load_file "$new_dir/.env" 1 "$new_dir"
-            # Phase 2: Load secrets from .env (if any {dotsecenv} references)
-            set -g _DOTSECENV_SECRETS_LOADED
-            _dotsecenv_load_file "$new_dir/.env" 2 "$new_dir"
+    # Security check for .secenv
+    if not _dotsecenv_security_check "$new_dir/.secenv"
+        return 0
+    end
+
+    # Trust check for .secenv
+    set -l should_load 0
+    _dotsecenv_is_trusted "$new_dir"
+    set -l trust_status $status
+
+    if test $trust_status -eq 0
+        set should_load 1
+    else if test $trust_status -eq 2
+        # Denied this session
+        return 0
+    else
+        # Not trusted, prompt user
+        if _dotsecenv_prompt_trust "$new_dir"
+            set should_load 1
         end
     end
 
-    # Load .secenv file (secrets, trust required)
-    if test $has_secenv -eq 1
-        # Security check for .secenv
-        if _dotsecenv_security_check "$new_dir/.secenv"
-            # Trust check for .secenv
-            set -l should_load_secenv 0
-            _dotsecenv_is_trusted "$new_dir"
-            set -l trust_status $status
+    if test $should_load -eq 0
+        return 0
+    end
 
-            if test $trust_status -eq 0
-                set should_load_secenv 1
-            else if test $trust_status -eq 2
-                # Denied this session - skip .secenv but keep .env loaded
-                set should_load_secenv 0
-            else
-                # Not trusted, prompt user
-                if _dotsecenv_prompt_trust "$new_dir"
-                    set should_load_secenv 1
-                end
-            end
+    # Phase 1: Load plain variables from .secenv
+    _dotsecenv_load_file "$new_dir/.secenv" 1 "$new_dir"
 
-            if test $should_load_secenv -eq 1
-                # Phase 1: Load plain variables from .secenv
-                _dotsecenv_load_file "$new_dir/.secenv" 1 "$new_dir"
+    # Phase 2: Load secrets from .secenv
+    set -g _DOTSECENV_SECRETS_LOADED
+    _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
 
-                # Phase 2: Load secrets from .secenv
-                set -g _DOTSECENV_SECRETS_LOADED
-                _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
-
-                if test (count $_DOTSECENV_SECRETS_LOADED) -gt 0
-                    # Track secrets per directory for unload reporting
-                    set -g _DOTSECENV_SECRETS_$dir_hash $_DOTSECENV_SECRETS_LOADED
-                    set -l keys_list (string join ', ' $_DOTSECENV_SECRETS_LOADED)
-                    echo "dotsecenv: loaded "(count $_DOTSECENV_SECRETS_LOADED)" secret(s) from .secenv: $keys_list" >&2
-                end
-            end
-        end
+    if test (count $_DOTSECENV_SECRETS_LOADED) -gt 0
+        # Track secrets per directory for unload reporting
+        set -g _DOTSECENV_SECRETS_$dir_hash $_DOTSECENV_SECRETS_LOADED
+        set -l keys_list (string join ', ' $_DOTSECENV_SECRETS_LOADED)
+        echo "dotsecenv: loaded "(count $_DOTSECENV_SECRETS_LOADED)" secret(s) from .secenv: $keys_list" >&2
     end
 
     # Push this directory onto the stack if we loaded anything

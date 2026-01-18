@@ -11,9 +11,6 @@
 declare -g -a _DOTSECENV_SESSION_TRUSTED_DIRS=()
 declare -g -a _DOTSECENV_SESSION_DENIED_DIRS=()
 
-# Track which vars were set by .env (for override warnings)
-declare -g -a _DOTSECENV_ENV_VARS=()
-
 # Track secrets loaded from .secenv (reset per directory change)
 declare -g -a _DOTSECENV_SECRETS_LOADED=()
 
@@ -183,7 +180,7 @@ _dotsecenv_prompt_trust() {
     esac
 }
 
-# Parse a line from .env or .secenv file
+# Parse a line from .secenv file
 # Sets global variables: _DOTSECENV_PARSE_KEY, _DOTSECENV_PARSE_VALUE, _DOTSECENV_PARSE_TYPE
 # Type: "plain", "secret_same" (key matches secret name), "secret_named" (different secret name)
 _dotsecenv_parse_line() {
@@ -256,7 +253,7 @@ _dotsecenv_array_append() {
     eval "${array_name}+=(\"\$value\")"
 }
 
-# Load a single .env or .secenv file
+# Load a single .secenv file
 # Arguments: file_path, phase (1=plain vars only, 2=secrets only), dir
 _dotsecenv_load_file() {
     local file="$1"
@@ -281,20 +278,10 @@ _dotsecenv_load_file() {
                 # Phase 1: load plain variables
                 export "$key=$value"
                 _dotsecenv_array_append "$vars_var" "$key"
-                _DOTSECENV_ENV_VARS+=("$key")
 
             elif [[ "$phase" == "2" && ("$ptype" == "secret_same" || "$ptype" == "secret_named") ]]; then
                 # Phase 2: load secrets via dotsecenv CLI
                 local secret_name="$value"
-
-                # Check if this will override a .env variable
-                local env_var=""
-                for env_var in "${_DOTSECENV_ENV_VARS[@]}"; do
-                    if [[ "$env_var" == "$key" ]]; then
-                        echo "dotsecenv: warning: $key from .secenv overrides value from .env" >&2
-                        break
-                    fi
-                done
 
                 # Fetch secret from vault (capture stderr separately to preserve secret value)
                 # Note: Initialize to empty to prevent zsh from printing existing values on re-declaration
@@ -468,92 +455,77 @@ _dotsecenv_on_cd() {
     fi
 
     # =========================================================================
-    # PHASE 3: Check if we're in a subtree with no new .env/.secenv to load
+    # PHASE 3: Check if we're in a subtree with no new .secenv to load
     # =========================================================================
-    local has_env=0
     local has_secenv=0
-    [[ -f "$new_dir/.env" ]] && has_env=1
     [[ -f "$new_dir/.secenv" ]] && has_secenv=1
 
     stack_len=${#_DOTSECENV_SOURCE_STACK[@]}
-    if [[ $stack_len -gt 0 && $has_env -eq 0 && $has_secenv -eq 0 ]]; then
-        # We're in a subtree of an existing source directory with no new files
+    if [[ $stack_len -gt 0 && $has_secenv -eq 0 ]]; then
+        # We're in a subtree of an existing source directory with no new .secenv
         # Secrets persist - nothing to do
         return 0
     fi
 
     # =========================================================================
-    # PHASE 4: PUSH - Load .env and/or .secenv if present
+    # PHASE 4: PUSH - Load .secenv if present
     # =========================================================================
-    if [[ $has_env -eq 0 && $has_secenv -eq 0 ]]; then
+    if [[ $has_secenv -eq 0 ]]; then
         return 0
     fi
-
-    # Clear env var tracking for fresh load
-    _DOTSECENV_ENV_VARS=()
 
     # Initialize the loaded vars array for this directory
     local dir_hash
     dir_hash=$(_dotsecenv_dir_hash "$new_dir")
     eval "_DOTSECENV_LOADED_${dir_hash}=()"
 
-    # Load .env file (plain vars and secrets)
-    if [[ $has_env -eq 1 ]]; then
-        if _dotsecenv_security_check "$new_dir/.env"; then
-            # Phase 1: Load plain variables from .env
-            _dotsecenv_load_file "$new_dir/.env" 1 "$new_dir"
-            # Phase 2: Load secrets from .env (if any {dotsecenv} references)
-            _DOTSECENV_SECRETS_LOADED=()
-            _dotsecenv_load_file "$new_dir/.env" 2 "$new_dir"
+    # Security check for .secenv
+    if ! _dotsecenv_security_check "$new_dir/.secenv"; then
+        return 0
+    fi
+
+    # Trust check for .secenv
+    local should_load=0
+    _dotsecenv_is_trusted "$new_dir"
+    local trust_status=$?
+
+    if [[ $trust_status -eq 0 ]]; then
+        should_load=1
+    elif [[ $trust_status -eq 2 ]]; then
+        # Denied this session
+        return 0
+    else
+        # Not trusted, prompt user
+        if _dotsecenv_prompt_trust "$new_dir"; then
+            should_load=1
         fi
     fi
 
-    # Load .secenv file (secrets, trust required)
-    if [[ $has_secenv -eq 1 ]]; then
-        # Security check for .secenv
-        if _dotsecenv_security_check "$new_dir/.secenv"; then
-            # Trust check for .secenv
-            local should_load_secenv=0
-            _dotsecenv_is_trusted "$new_dir"
-            local trust_status=$?
+    if [[ $should_load -eq 0 ]]; then
+        return 0
+    fi
 
-            if [[ $trust_status -eq 0 ]]; then
-                should_load_secenv=1
-            elif [[ $trust_status -eq 2 ]]; then
-                # Denied this session - skip .secenv but keep .env loaded
-                should_load_secenv=0
-            else
-                # Not trusted, prompt user
-                if _dotsecenv_prompt_trust "$new_dir"; then
-                    should_load_secenv=1
-                fi
-            fi
+    # Phase 1: Load plain variables from .secenv
+    _dotsecenv_load_file "$new_dir/.secenv" 1 "$new_dir"
 
-            if [[ $should_load_secenv -eq 1 ]]; then
-                # Phase 1: Load plain variables from .secenv
-                _dotsecenv_load_file "$new_dir/.secenv" 1 "$new_dir"
+    # Phase 2: Load secrets from .secenv
+    _DOTSECENV_SECRETS_LOADED=()
+    _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
 
-                # Phase 2: Load secrets from .secenv
-                _DOTSECENV_SECRETS_LOADED=()
-                _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
-
-                if [[ ${#_DOTSECENV_SECRETS_LOADED[@]} -gt 0 ]]; then
-                    # Track secrets per directory for unload reporting
-                    local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
-                    eval "${secrets_var}=()"
-                    local secret_key
-                    for secret_key in "${_DOTSECENV_SECRETS_LOADED[@]}"; do
-                        _dotsecenv_array_append "$secrets_var" "$secret_key"
-                    done
-                    local keys_list
-                    keys_list=$(
-                        IFS=', '
-                        echo "${_DOTSECENV_SECRETS_LOADED[*]}"
-                    )
-                    echo "dotsecenv: loaded ${#_DOTSECENV_SECRETS_LOADED[@]} secret(s) from .secenv: $keys_list" >&2
-                fi
-            fi
-        fi
+    if [[ ${#_DOTSECENV_SECRETS_LOADED[@]} -gt 0 ]]; then
+        # Track secrets per directory for unload reporting
+        local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
+        eval "${secrets_var}=()"
+        local secret_key
+        for secret_key in "${_DOTSECENV_SECRETS_LOADED[@]}"; do
+            _dotsecenv_array_append "$secrets_var" "$secret_key"
+        done
+        local keys_list
+        keys_list=$(
+            IFS=', '
+            echo "${_DOTSECENV_SECRETS_LOADED[*]}"
+        )
+        echo "dotsecenv: loaded ${#_DOTSECENV_SECRETS_LOADED[@]} secret(s) from .secenv: $keys_list" >&2
     fi
 
     # Push this directory onto the stack if we loaded anything
