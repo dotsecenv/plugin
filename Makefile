@@ -32,9 +32,9 @@ test-fish:
 	@echo "Running fish shell plugin tests..."
 	@./tests/test_plugins.sh --fish-only
 
-.PHONY: test-all
-test-all:
-	@echo "Running all plugin tests (including WIP tests)..."
+.PHONY: test
+test: test-plugins test-managers test-managers-remote
+	@echo "Running all plugin tests..."
 	@./tests/test_plugins.sh
 
 .PHONY: test-managers

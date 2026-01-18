@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # E2E tests for dotsecenv shell plugins (bash and zsh)
+# For fish tests, use test_plugins.fish
 #
 # Usage:
-#   ./tests/shell/test_plugins.sh [--bash-only|--zsh-only] [--verbose]
+#   ./test_plugins.sh [--bash-only|--zsh-only] [--verbose]
 #
 # Requires bash 5.2+ (on macOS, will attempt to use Homebrew's bash)
 
@@ -65,7 +66,6 @@ TESTS_FAILED=0
 # Options
 TEST_BASH=1
 TEST_ZSH=1
-TEST_FISH=1
 VERBOSE=0
 
 # Parse arguments
@@ -73,15 +73,9 @@ for arg in "$@"; do
     case "$arg" in
     --bash-only)
         TEST_ZSH=0
-        TEST_FISH=0
         ;;
     --zsh-only)
         TEST_BASH=0
-        TEST_FISH=0
-        ;;
-    --fish-only)
-        TEST_BASH=0
-        TEST_ZSH=0
         ;;
     --verbose) VERBOSE=1 ;;
     esac
@@ -672,14 +666,6 @@ EOF
             _dotsecenv_chpwd_hook
             echo \"\$DB_PASSWORD\"
         " 2>&1)
-    elif [[ "$shell" == "fish" ]]; then
-        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
-            set -x PATH '$mock_path' \$PATH
-            source '$SHELL_DIR/conf.d/dotsecenv.fish'
-            cd '$test_dir/parent'
-            cd '$test_dir/parent/child'
-            echo \$DB_PASSWORD
-        " 2>&1)
     else
         result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
             export PATH='$mock_path:$PATH'
@@ -731,14 +717,6 @@ EOF
             cd '$test_dir/other'
             _dotsecenv_chpwd_hook
             echo \"VAR=\${DB_PASSWORD:-unset}\"
-        " 2>&1)
-    elif [[ "$shell" == "fish" ]]; then
-        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
-            set -x PATH '$mock_path' \$PATH
-            source '$SHELL_DIR/conf.d/dotsecenv.fish'
-            cd '$test_dir/project'
-            cd '$test_dir/other'
-            echo 'VAR='(test -n \"\$DB_PASSWORD\"; and echo \$DB_PASSWORD; or echo 'unset')
         " 2>&1)
     else
         result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
@@ -800,14 +778,6 @@ EOF
             _dotsecenv_chpwd_hook
             echo \"\$DB_PASSWORD|\$API_KEY\"
         " 2>&1)
-    elif [[ "$shell" == "fish" ]]; then
-        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
-            set -x PATH '$mock_path' \$PATH
-            source '$SHELL_DIR/conf.d/dotsecenv.fish'
-            cd '$test_dir/parent'
-            cd '$test_dir/parent/child'
-            echo \$DB_PASSWORD'|'\$API_KEY
-        " 2>&1)
     else
         result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
             export PATH='$mock_path:$PATH'
@@ -862,15 +832,6 @@ EOF
             _dotsecenv_chpwd_hook
             echo \"\$DB_PASSWORD\"
         " 2>&1)
-    elif [[ "$shell" == "fish" ]]; then
-        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
-            set -x PATH '$mock_path' \$PATH
-            source '$SHELL_DIR/conf.d/dotsecenv.fish'
-            cd '$test_dir/parent'
-            cd '$test_dir/parent/child1'
-            cd '$test_dir/parent/child2'
-            echo \$DB_PASSWORD
-        " 2>&1)
     else
         result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
             export PATH='$mock_path:$PATH'
@@ -923,14 +884,6 @@ EOF
             _dotsecenv_chpwd_hook
             cd '$test_dir/project'
             _dotsecenv_chpwd_hook 2>&1
-        " 2>&1)
-    elif [[ "$shell" == "fish" ]]; then
-        result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" fish -c "
-            set -x PATH '$mock_path' \$PATH
-            source '$SHELL_DIR/conf.d/dotsecenv.fish'
-            cd '$test_dir/project'
-            cd '$test_dir/project/src'
-            cd '$test_dir/project'
         " 2>&1)
     else
         result=$(DOTSECENV_CONFIG_DIR="$config_dir" DOTSECENV_TRUSTED_DIRS_FILE="$config_dir/trusted_dirs" zsh -c "
@@ -1017,23 +970,6 @@ main() {
             test_tree_scope_reload_on_return "zsh"
         else
             warn "Zsh not found, skipping zsh tests"
-        fi
-    fi
-
-    # Run fish tests (tree-scoped only for now)
-    if [[ $TEST_FISH -eq 1 ]]; then
-        if command -v fish &>/dev/null; then
-            echo ""
-            log "Running Fish tests..."
-            echo ""
-
-            test_tree_scope_persist_in_subdir "fish"
-            test_tree_scope_unload_on_leave "fish"
-            test_tree_scope_nested_secenv "fish"
-            test_tree_scope_sibling_navigation "fish"
-            test_tree_scope_reload_on_return "fish"
-        else
-            warn "Fish not found, skipping fish tests"
         fi
     fi
 
