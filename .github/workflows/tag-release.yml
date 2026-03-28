@@ -6,12 +6,12 @@ on:
 
 jobs:
   tag:
-    name: Tag latest main commit
+    name: Tag commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.event.client_payload.sha || 'main' }}
           fetch-depth: 1
 
       - name: Create tag
