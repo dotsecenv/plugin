@@ -28,7 +28,7 @@ jobs:
           ref: ${{ env.REF }}
           fetch-depth: 1
 
+      - uses: releasetools/cli@v0
+
       - name: Create tag
-        run: |
-          git tag "$TAG"
-          git push origin "$TAG"
+        run: rt git::release --major --push "$TAG"
