@@ -567,8 +567,8 @@ _dotsecenv_load_ancestors() {
     # Walk up from current dir (exclusive) to boundary (inclusive), collect dirs with .secenv
     local -a ancestor_secenvs=()
     local dir="$original_dir"
+    local parent=""
     while true; do
-        local parent
         parent=$(dirname "$dir")
         [[ "$parent" == "$dir" ]] && break # reached filesystem root
         dir="$parent"
