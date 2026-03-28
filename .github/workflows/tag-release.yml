@@ -4,6 +4,9 @@ on:
   repository_dispatch:
     types: [tag-release]
 
+permissions:
+  contents: write
+
 jobs:
   tag:
     name: Tag commit
