@@ -1,0 +1,20 @@
+name: Tag release
+
+on:
+  repository_dispatch:
+    types: [tag-release]
+
+jobs:
+  tag:
+    name: Tag latest main commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Create tag
+        run: |
+          git tag "${{ github.event.client_payload.version }}"
+          git push origin "${{ github.event.client_payload.version }}"
