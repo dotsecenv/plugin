@@ -564,15 +564,15 @@ function _dotsecenv_load_ancestors
         return 0
     end
 
-    # Process root-first (reverse) by simulating walk down
-    set -l prev ""
+    # Process root-first (reverse) by cd-ing into each directory.
+    # Actual cd is required so dotsecenv CLI resolves vault paths relative to the
+    # .secenv directory. Fish's --on-variable PWD hook fires automatically from cd.
     for i in (seq (count $to_load) -1 1)
-        _dotsecenv_on_cd "$prev" "$to_load[$i]"
-        set prev "$to_load[$i]"
+        cd "$to_load[$i]"; or continue
     end
 
-    # Final step: simulate arriving at the original directory
-    _dotsecenv_on_cd "$prev" "$original_dir"
+    # Return to the original directory
+    cd "$original_dir"
 end
 
 # Hook function called on directory change

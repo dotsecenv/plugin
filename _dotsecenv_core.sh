@@ -597,9 +597,12 @@ _dotsecenv_load_ancestors() {
         return 0
     fi
 
-    # Process root-first (reverse the collected list) by simulating walk down
+    # Process root-first (reverse the collected list) by cd-ing into each directory.
+    # Actual cd is required so dotsecenv CLI resolves vault paths relative to the
+    # .secenv directory. In zsh, cd triggers chpwd hook automatically. In bash,
+    # PROMPT_COMMAND won't fire mid-function so we trigger the hook manually.
     # Note: zsh arrays are 1-indexed, bash arrays are 0-indexed
-    local prev="" i=0 start_idx=0 end_idx=0
+    local i=0 start_idx=0 end_idx=0
     if [[ -n "$ZSH_VERSION" ]]; then
         start_idx=${#to_load[@]}
         end_idx=1
@@ -609,12 +612,17 @@ _dotsecenv_load_ancestors() {
     fi
 
     for ((i = start_idx; i >= end_idx; i--)); do
-        _dotsecenv_on_cd "$prev" "${to_load[$i]}"
-        prev="${to_load[$i]}"
+        cd "${to_load[$i]}" || continue
+        if [[ -z "$ZSH_VERSION" ]]; then
+            _dotsecenv_chpwd_hook
+        fi
     done
 
-    # Final step: simulate arriving at the original directory
-    _dotsecenv_on_cd "$prev" "$original_dir"
+    # Return to the original directory
+    cd "$original_dir" || return 1
+    if [[ -z "$ZSH_VERSION" ]]; then
+        _dotsecenv_chpwd_hook
+    fi
 }
 
 # Clipboard helper - copies stdin to clipboard
