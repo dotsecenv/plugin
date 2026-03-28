@@ -570,7 +570,7 @@ _dotsecenv_load_ancestors() {
     while true; do
         local parent
         parent=$(dirname "$dir")
-        [[ "$parent" == "$dir" ]] && break  # reached filesystem root
+        [[ "$parent" == "$dir" ]] && break # reached filesystem root
         dir="$parent"
         if [[ -f "$dir/.secenv" ]]; then
             ancestor_secenvs+=("$dir")
@@ -584,7 +584,10 @@ _dotsecenv_load_ancestors() {
     for ancestor in "${ancestor_secenvs[@]}"; do
         already_loaded=0
         for stack_entry in "${_DOTSECENV_SOURCE_STACK[@]}"; do
-            [[ "$stack_entry" == "$ancestor" ]] && { already_loaded=1; break; }
+            [[ "$stack_entry" == "$ancestor" ]] && {
+                already_loaded=1
+                break
+            }
         done
         [[ $already_loaded -eq 0 ]] && to_load+=("$ancestor")
     done
