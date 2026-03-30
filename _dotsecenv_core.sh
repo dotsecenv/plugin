@@ -46,9 +46,12 @@ _dotsecenv_stack_push() {
 _dotsecenv_stack_pop() {
     # Remove last element from stack
     # Note: zsh's unset 'arr[-1]' empties the element but doesn't shrink
-    # the array inside functions, so use slice assignment instead
-    if [[ -n "$ZSH_VERSION" ]]; then
-        _DOTSECENV_SOURCE_STACK=("${(@)_DOTSECENV_SOURCE_STACK[1,-2]}")
+    # the array inside functions, so use slice reassignment instead
+    local len=${#_DOTSECENV_SOURCE_STACK[@]}
+    if [[ $len -eq 0 ]]; then
+        return
+    elif [[ -n "$ZSH_VERSION" ]]; then
+        _DOTSECENV_SOURCE_STACK=("${_DOTSECENV_SOURCE_STACK[@]:0:$((len - 1))}")
     else
         unset '_DOTSECENV_SOURCE_STACK[-1]'
     fi
@@ -687,7 +690,10 @@ _dotsecenv_reload() {
     if [[ -f "$PWD/.secenv" ]]; then
         local already_loaded=0
         for dir in "${dirs_to_reload[@]}"; do
-            [[ "$dir" == "$PWD" ]] && { already_loaded=1; break; }
+            [[ "$dir" == "$PWD" ]] && {
+                already_loaded=1
+                break
+            }
         done
         if [[ $already_loaded -eq 0 ]]; then
             _dotsecenv_on_cd "" "$PWD"
