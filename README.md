@@ -1,5 +1,7 @@
 # dotsecenv/plugin
 
+> **⚠️ Source has moved.** This repository is now an **artifact-only publish target**. The shell plugin source of truth lives in [`dotsecenv/dotsecenv`](https://github.com/dotsecenv/dotsecenv) at [`plugin/`](https://github.com/dotsecenv/dotsecenv/tree/main/plugin). Open issues and pull requests against `dotsecenv/dotsecenv`. Releases continue to publish to this repo for installation via plugin managers.
+
 [![Shell plugins CI](https://github.com/dotsecenv/plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/dotsecenv/plugin/actions/workflows/ci.yml)
 
 Shell plugins for [dotsecenv](https://github.com/dotsecenv/dotsecenv) that automatically load `.env` and `.secenv` files when entering directories.
