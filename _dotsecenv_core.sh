@@ -14,6 +14,9 @@ declare -g -a _DOTSECENV_SESSION_DENIED_DIRS=()
 # Track secrets loaded from .secenv (reset per directory change)
 declare -g -a _DOTSECENV_SECRETS_LOADED=()
 
+# Track plain env vars loaded from .secenv (reset per directory change)
+declare -g -a _DOTSECENV_ENVVARS_LOADED=()
+
 # Stack of directories with loaded .secenv (ordered ancestor → descendant)
 # Used for tree-scoped secret loading
 declare -g -a _DOTSECENV_SOURCE_STACK=()
@@ -136,6 +139,15 @@ _dotsecenv_is_trusted() {
     return 1
 }
 
+# Check if directory is trusted in the persistent file ONLY (always-trusted)
+# Returns 0 if always-trusted, 1 if not in the persistent file
+# Used to distinguish always-trusted dirs from session-trusted ones
+_dotsecenv_is_trusted_always() {
+    local dir="$1"
+    [[ -f "$DOTSECENV_TRUSTED_DIRS_FILE" ]] || return 1
+    grep -qxF "$dir" "$DOTSECENV_TRUSTED_DIRS_FILE" 2>/dev/null
+}
+
 # Add directory to persistent trusted list
 _dotsecenv_trust_always() {
     local dir="$1"
@@ -156,9 +168,11 @@ _dotsecenv_deny_session() {
 }
 
 # Prompt user for trust decision
+# Optional second arg replaces the default "found .secenv" lead line
 # Returns 0 if should load, 1 if should not load
 _dotsecenv_prompt_trust() {
     local dir="$1"
+    local lead="${2:-dotsecenv: found .secenv in $dir}"
     local response
 
     # Only prompt if we have a TTY
@@ -167,7 +181,7 @@ _dotsecenv_prompt_trust() {
         return 1
     fi
 
-    echo "dotsecenv: found .secenv in $dir" >&2
+    echo "$lead" >&2
     echo -n "Load secrets? [y]es / [n]o / [a]lways: " >&2
     read -r response
 
@@ -205,6 +219,11 @@ _dotsecenv_parse_line() {
 
     # Trim leading whitespace
     line="${line#"${line%%[![:space:]]*}"}"
+
+    # Strip a trailing CR (CRLF files), then trailing whitespace, so secret
+    # placeholders like {dotsecenv/} keep a clean closing brace before matching.
+    line="${line%$'\r'}"
+    line="${line%"${line##*[![:space:]]}"}"
 
     # Match KEY=VALUE pattern
     if [[ "$line" == *=* ]]; then
@@ -263,6 +282,17 @@ _dotsecenv_array_append() {
     eval "${array_name}+=(\"\$value\")"
 }
 
+# Join arguments into a single ", "-separated string (portable across bash and
+# zsh; "${arr[*]}" with IFS=', ' would use only the first IFS char).
+_dotsecenv_join_comma() {
+    local result="" sep="" item
+    for item in "$@"; do
+        result="${result}${sep}${item}"
+        sep=", "
+    done
+    printf '%s' "$result"
+}
+
 # Load a single .secenv file
 # Arguments: file_path, phase (1=plain vars only, 2=secrets only), dir
 _dotsecenv_load_file() {
@@ -288,6 +318,7 @@ _dotsecenv_load_file() {
                 # Phase 1: load plain variables
                 export "$key=$value"
                 _dotsecenv_array_append "$vars_var" "$key"
+                _DOTSECENV_ENVVARS_LOADED+=("$key")
 
             elif [[ "$phase" == "2" && ("$ptype" == "secret_same" || "$ptype" == "secret_named") ]]; then
                 # Phase 2: load secrets via dotsecenv CLI
@@ -325,15 +356,25 @@ _dotsecenv_unload_dir() {
     dir_hash=$(_dotsecenv_dir_hash "$dir")
     local vars_var="_DOTSECENV_LOADED_${dir_hash}"
     local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
+    local envvars_var="_DOTSECENV_ENVVARS_${dir_hash}"
 
     # Reset the unloaded keys tracking
     _DOTSECENV_UNLOADED_KEYS=()
 
-    # Report secrets being unloaded before clearing them
+    # Report plain env vars and secrets on separate lines before clearing them;
+    # skip a line when its category is empty.
+    if eval "[[ \${#${envvars_var}[@]} -gt 0 ]]" 2>/dev/null; then
+        local envvars_list="" envvar_count=0
+        eval "envvar_count=\${#${envvars_var}[@]}"
+        eval "envvars_list=\$(_dotsecenv_join_comma \"\${${envvars_var}[@]}\")"
+        echo "dotsecenv: unloaded $envvar_count env var(s): $envvars_list" >&2
+        unset "$envvars_var"
+    fi
+
     if eval "[[ \${#${secrets_var}[@]} -gt 0 ]]" 2>/dev/null; then
         local secrets_list="" secret_count=0
         eval "secret_count=\${#${secrets_var}[@]}"
-        eval "secrets_list=\$(IFS=', '; echo \"\${${secrets_var}[*]}\")"
+        eval "secrets_list=\$(_dotsecenv_join_comma \"\${${secrets_var}[@]}\")"
         echo "dotsecenv: unloaded $secret_count secret(s): $secrets_list" >&2
         unset "$secrets_var"
     fi
@@ -400,6 +441,118 @@ _dotsecenv_dir_has_key() {
         eval "for var in \"\${${vars_var}[@]}\"; do [[ \"\$var\" == \"$target_key\" ]] && return 0; done"
     fi
     return 1
+}
+
+# Load a single key from a directory's .secenv and track it.
+# Mirrors _dotsecenv_load_file but filtered to one target key, appending to the
+# per-directory tracking arrays so the key unloads correctly on leave.
+# Returns 0 if the key was loaded, 1 otherwise.
+_dotsecenv_load_key() {
+    local dir="$1"
+    local target_key="$2"
+    local file="$dir/.secenv"
+    local dir_hash
+    dir_hash=$(_dotsecenv_dir_hash "$dir")
+    local vars_var="_DOTSECENV_LOADED_${dir_hash}"
+    local secrets_var="_DOTSECENV_SECRETS_${dir_hash}"
+    local envvars_var="_DOTSECENV_ENVVARS_${dir_hash}"
+
+    [[ -f "$file" ]] || return 1
+
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if _dotsecenv_parse_line "$line"; then
+            local key="$_DOTSECENV_PARSE_KEY"
+            local value="$_DOTSECENV_PARSE_VALUE"
+            local ptype="$_DOTSECENV_PARSE_TYPE"
+
+            [[ "$key" == "$target_key" ]] || continue
+
+            if [[ "$ptype" == "plain" ]]; then
+                export "$key=$value"
+                _dotsecenv_array_append "$vars_var" "$key"
+                _dotsecenv_array_append "$envvars_var" "$key"
+                return 0
+            elif [[ "$ptype" == "secret_same" || "$ptype" == "secret_named" ]]; then
+                local secret_name="$value"
+                local secret_result="" secret_stderr_file=""
+                secret_stderr_file=$(mktemp)
+                if secret_result=$(dotsecenv secret get "$secret_name" 2>"$secret_stderr_file"); then
+                    export "$key=$secret_result"
+                    _dotsecenv_array_append "$vars_var" "$key"
+                    _dotsecenv_array_append "$secrets_var" "$key"
+                    _DOTSECENV_SECRETS_LOADED+=("$key")
+                    [[ -s "$secret_stderr_file" ]] && cat "$secret_stderr_file" >&2
+                    if [[ "$secret_result" == *$'\n'* ]]; then
+                        echo "dotsecenv: warning: $key contains newlines; always quote it: \"\$$key\"" >&2
+                    fi
+                    rm -f "$secret_stderr_file"
+                    return 0
+                fi
+                echo "dotsecenv: error fetching secret '$secret_name' for $key:" >&2
+                cat "$secret_stderr_file" >&2
+                rm -f "$secret_stderr_file"
+                return 1
+            fi
+            return 1
+        fi
+    done <"$file"
+
+    return 1
+}
+
+# Detect keys in a directory's .secenv that are not yet loaded, then load them.
+# Always-trusted dirs (persistent file) load silently; otherwise re-prompt first.
+# Fast no-op when nothing changed - this matters because zsh fires chpwd on every
+# `cd .`, so without it session/untrusted dirs would re-prompt on every benign cd.
+_dotsecenv_sync_new_keys() {
+    local dir="$1"
+    local file="$dir/.secenv"
+
+    [[ -f "$file" ]] || return 0
+
+    # Collect keys present in the file but not currently loaded
+    local -a new_keys=()
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if _dotsecenv_parse_line "$line"; then
+            if ! _dotsecenv_dir_has_key "$dir" "$_DOTSECENV_PARSE_KEY"; then
+                new_keys+=("$_DOTSECENV_PARSE_KEY")
+            fi
+        fi
+    done <"$file"
+
+    [[ ${#new_keys[@]} -gt 0 ]] || return 0
+
+    # Re-check perms: the file could have been made world-writable between loads
+    if ! _dotsecenv_security_check "$file"; then
+        return 1
+    fi
+
+    # Always-trusted dirs load silently; otherwise re-prompt before loading
+    if ! _dotsecenv_is_trusted_always "$dir"; then
+        local keys_lead
+        keys_lead=$(
+            IFS=' '
+            echo "${new_keys[*]}"
+        )
+        if ! _dotsecenv_prompt_trust "$dir" "dotsecenv: new keys in $dir/.secenv: $keys_lead"; then
+            return 0
+        fi
+    fi
+
+    local key loaded=0
+    for key in "${new_keys[@]}"; do
+        if _dotsecenv_load_key "$dir" "$key"; then
+            ((loaded++)) || true
+        fi
+    done
+
+    if [[ $loaded -gt 0 ]]; then
+        echo "dotsecenv: loaded $loaded new key(s) from $dir/.secenv" >&2
+    fi
+
+    return 0
 }
 
 # Main function to process directory change (tree-scoped loading)
@@ -474,7 +627,9 @@ _dotsecenv_on_cd() {
                 _dotsecenv_stack_pop
                 _dotsecenv_unload_dir "$top_dir"
             else
-                # Coming from a subdirectory - secrets already loaded, nothing to do
+                # Coming from a subdirectory - secrets already loaded, but pick up
+                # any keys appended to the .secenv since it was first loaded
+                _dotsecenv_sync_new_keys "$top_dir"
                 return 0
             fi
         fi
@@ -532,11 +687,27 @@ _dotsecenv_on_cd() {
     fi
 
     # Phase 1: Load plain variables from .secenv
+    _DOTSECENV_ENVVARS_LOADED=()
     _dotsecenv_load_file "$new_dir/.secenv" 1 "$new_dir"
 
     # Phase 2: Load secrets from .secenv
     _DOTSECENV_SECRETS_LOADED=()
     _dotsecenv_load_file "$new_dir/.secenv" 2 "$new_dir"
+
+    # Report plain env vars and secrets on separate lines; skip a line when its
+    # category is empty (an empty .secenv produces no output at all).
+    if [[ ${#_DOTSECENV_ENVVARS_LOADED[@]} -gt 0 ]]; then
+        # Track env vars per directory for unload reporting
+        local envvars_var="_DOTSECENV_ENVVARS_${dir_hash}"
+        eval "${envvars_var}=()"
+        local env_key
+        for env_key in "${_DOTSECENV_ENVVARS_LOADED[@]}"; do
+            _dotsecenv_array_append "$envvars_var" "$env_key"
+        done
+        local envvars_list
+        envvars_list=$(_dotsecenv_join_comma "${_DOTSECENV_ENVVARS_LOADED[@]}")
+        echo "dotsecenv: loaded ${#_DOTSECENV_ENVVARS_LOADED[@]} env var(s) from .secenv: $envvars_list" >&2
+    fi
 
     if [[ ${#_DOTSECENV_SECRETS_LOADED[@]} -gt 0 ]]; then
         # Track secrets per directory for unload reporting
@@ -547,10 +718,7 @@ _dotsecenv_on_cd() {
             _dotsecenv_array_append "$secrets_var" "$secret_key"
         done
         local keys_list
-        keys_list=$(
-            IFS=', '
-            echo "${_DOTSECENV_SECRETS_LOADED[*]}"
-        )
+        keys_list=$(_dotsecenv_join_comma "${_DOTSECENV_SECRETS_LOADED[@]}")
         echo "dotsecenv: loaded ${#_DOTSECENV_SECRETS_LOADED[@]} secret(s) from .secenv: $keys_list" >&2
     fi
 
@@ -706,6 +874,11 @@ dse() {
     case "${1:-}" in
     reload)
         _dotsecenv_reload
+        ;;
+    sync)
+        # Pick up keys added to the current dir's .secenv without unloading first.
+        # Cross-shell manual trigger for shells that do not fire a hook on `cd .`.
+        _dotsecenv_sync_new_keys "$PWD"
         ;;
     get)
         shift
