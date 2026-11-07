@@ -27,6 +27,9 @@ overwritten on the next publish.
   `conf.d/dotsecenv.fish` load-time / PWD-hook entry points and the bash/zsh
   load-time / `chpwd` equivalents.
 
-Each mirrored commit records its origin in the commit body: `Source-Commit`,
-`Source-SHA`, `Source-Path`, and `Source-Tag` (on release). See
+Each mirrored commit names its origin in a `Source-Commit` trailer. The
+monorepo's `Verify Satellite Drift` workflow checks this repository's HEAD with
+`releasetools/actions/verify-signed-push`: GitHub must have signed it for the
+release App, the named commit must be on monorepo `main`, and this repository's
+tree must equal that commit's `plugin/` tree. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
